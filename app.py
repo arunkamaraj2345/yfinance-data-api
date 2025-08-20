@@ -13,19 +13,17 @@ def get_stock_data_between_dates():
         return jsonify({"error": "Missing parameters: symbol, start, end"})
 
     try:
+        # Fetch raw OHLC data (only split-adjusted Close)
         ticker = yf.Ticker(symbol)
-        df = ticker.history(start=start, end=end).reset_index()
-
-        # Drop Adj Close so only raw Close is used
-        if "Adj Close" in df.columns:
-            df = df.drop(columns=["Adj Close"])
+        df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
 
         if df.empty:
             return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
 
+        # Build result → only Date + Close (not dividend adjusted)
         result = [["Date", "Close"]]
         for index, row in df.iterrows():
-            result.append([row['Date'].strftime('%Y-%m-%d'), row['Close']])
+            result.append([row['Date'].strftime('%Y-%m-%d'), float(row['Close'])])
 
         return jsonify(result)
 
