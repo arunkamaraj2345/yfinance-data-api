@@ -16,6 +16,10 @@ def get_stock_data_between_dates():
         ticker = yf.Ticker(symbol)
         df = ticker.history(start=start, end=end).reset_index()
 
+        # Drop Adj Close so only raw Close is used
+        if "Adj Close" in df.columns:
+            df = df.drop(columns=["Adj Close"])
+
         if df.empty:
             return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
 
