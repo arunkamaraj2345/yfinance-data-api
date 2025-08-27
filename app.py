@@ -9,21 +9,39 @@ def get_stock_data_between_dates():
     start = request.args.get('start')
     end = request.args.get('end')
 
+    # Optional fields requested by user
+    extra_fields = request.args.get('fields')  # e.g. fields=Close,Volume,Open
+    if extra_fields:
+        fields = [f.strip().capitalize() for f in extra_fields.split(",")]
+    else:
+        fields = ["Close"]  # default → only Close
+
     if not symbol or not start or not end:
         return jsonify({"error": "Missing parameters: symbol, start, end"})
 
     try:
-        # Fetch raw OHLC data (only split-adjusted Close)
+        # Fetch OHLCV data with split-adjusted close only
         ticker = yf.Ticker(symbol)
         df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
 
         if df.empty:
             return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
 
-        # Build result → only Date + Close (not dividend adjusted)
-        result = [["Date", "Close"]]
-        for index, row in df.iterrows():
-            result.append([row['Date'].strftime('%Y-%m-%d'), float(row['Close'])])
+        result = [["Date"] + fields]
+
+        # Build rows
+        for _, row in df.iterrows():
+            entry = [row['Date'].strftime('%Y-%m-%d')]
+            for field in fields:
+                if field in df.columns:
+                    entry.append(float(row[field]))
+                elif field.lower() == "52weekhigh":
+                    entry.append(float(ticker.fast_info.get("yearHigh", "N/A")))
+                elif field.lower() == "52weeklow":
+                    entry.append(float(ticker.fast_info.get("yearLow", "N/A")))
+                else:
+                    entry.append("NIL")  # fallback if invalid field
+            result.append(entry)
 
         return jsonify(result)
 
