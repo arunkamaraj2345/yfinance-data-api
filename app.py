@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import yfinance as yf
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -20,12 +21,20 @@ def get_stock_data_between_dates():
         return jsonify({"error": "Missing parameters: symbol, start, end"})
 
     try:
-        # Fetch OHLCV data with split-adjusted close only
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
+        # Adjust end date because Yahoo excludes the given end date
+        end_date = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)
 
+        # Fetch OHLCV data (no auto adjustment to preserve consistency)
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(
+            start=start,
+            end=end_date.strftime("%Y-%m-%d"),
+            auto_adjust=False
+        ).reset_index()
+
+        # Return empty list instead of error if no data found
         if df.empty:
-            return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
+            return jsonify([])
 
         result = [["Date"] + fields]
 
