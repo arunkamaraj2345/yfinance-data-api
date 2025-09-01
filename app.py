@@ -10,46 +10,39 @@ def get_stock_data_between_dates():
     start = request.args.get('start')
     end = request.args.get('end')
 
-    # Optional fields requested by user
-    extra_fields = request.args.get('fields')  # e.g. fields=Close,Volume,Open
+    extra_fields = request.args.get('fields')
     if extra_fields:
         fields = [f.strip().capitalize() for f in extra_fields.split(",")]
     else:
-        fields = ["Close"]  # default → only Close
+        fields = ["Close"]
 
     if not symbol or not start or not end:
         return jsonify({"error": "Missing parameters: symbol, start, end"})
 
     try:
-        # Adjust end date because Yahoo excludes the given end date
-        end_date = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)
-
-        # Fetch OHLCV data (no auto adjustment to preserve consistency)
         ticker = yf.Ticker(symbol)
-        df = ticker.history(
-            start=start,
-            end=end_date.strftime("%Y-%m-%d"),
-            auto_adjust=False
-        ).reset_index()
+        df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
 
-        # Return empty list instead of error if no data found
         if df.empty:
-            return jsonify([])
+            return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
+
+        # ✅ Ensure Date column always in YYYY-MM-DD format
+        if "Date" in df.columns:
+            df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
         result = [["Date"] + fields]
 
-        # Build rows
         for _, row in df.iterrows():
-            entry = [row['Date'].strftime('%Y-%m-%d')]
+            entry = [row["Date"]]  # already a string in YYYY-MM-DD
             for field in fields:
                 if field in df.columns:
                     entry.append(float(row[field]))
                 elif field.lower() == "52weekhigh":
-                    entry.append(float(ticker.fast_info.get("yearHigh", "N/A")))
+                    entry.append(float(ticker.fast_info.get("yearHigh", "NIL")))
                 elif field.lower() == "52weeklow":
-                    entry.append(float(ticker.fast_info.get("yearLow", "N/A")))
+                    entry.append(float(ticker.fast_info.get("yearLow", "NIL")))
                 else:
-                    entry.append("NIL")  # fallback if invalid field
+                    entry.append("NIL")
             result.append(entry)
 
         return jsonify(result)
@@ -57,5 +50,7 @@ def get_stock_data_between_dates():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
+
