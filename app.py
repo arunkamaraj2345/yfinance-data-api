@@ -5,9 +5,6 @@ import pandas as pd
 app = Flask(__name__)
 
 
-# -------------------------------------------------------------------
-# Utility functions
-# -------------------------------------------------------------------
 def safe_float(val):
     try:
         return float(val)
@@ -15,35 +12,6 @@ def safe_float(val):
         return "NIL"
 
 
-def get_yoy_quarterly_growth(df, field):
-    """
-    df = ticker.quarterly_financials
-    field = "Total Revenue" or "Net Income"
-    """
-    if df is None or field not in df.index:
-        return "NIL"
-
-    series = df.loc[field].dropna().values
-
-    # Need at least 5 quarters to compare Q0 vs Q4 (YoY same quarter comparison)
-    if len(series) < 5:
-        return "NIL"
-
-    current = safe_float(series[0])
-    prev_yoy = safe_float(series[4])
-
-    if current == "NIL" or prev_yoy in ("NIL", 0):
-        return "NIL"
-
-    try:
-        return round(((current - prev_yoy) / prev_yoy) * 100, 2)
-    except:
-        return "NIL"
-
-
-# -------------------------------------------------------------------
-# MAIN API
-# -------------------------------------------------------------------
 @app.route("/get_stock_data_between_dates", methods=["GET"])
 def get_stock_data_between_dates():
     symbol = request.args.get("symbol")
@@ -60,7 +28,7 @@ def get_stock_data_between_dates():
         ticker = yf.Ticker(symbol)
 
         # ---------------------------------------------------------------
-        # 1️⃣ PRICE DATA (Always from history → auto_adjust = FALSE)
+        # 1️⃣ PRICE DATA — strict rule: auto_adjust=False
         # ---------------------------------------------------------------
         df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
 
@@ -68,29 +36,13 @@ def get_stock_data_between_dates():
             return jsonify({"error": f"No data found for {symbol}."})
 
         # ---------------------------------------------------------------
-        # 2️⃣ METADATA (fast_info, info, fundamentals)
+        # 2️⃣ FAST INFO + INFO (for metadata)
         # ---------------------------------------------------------------
         fast_info = ticker.fast_info or {}
         info = ticker.info or {}
 
-        # Quarterly fundamentals
-        try:
-            qf = ticker.quarterly_financials
-        except:
-            qf = None
-
-        # YoY quarterly calculations
-        yoy_quarterly_revenue = get_yoy_quarterly_growth(qf, "Total Revenue")
-        yoy_quarterly_profit = get_yoy_quarterly_growth(qf, "Net Income")
-
-        # Last quarter name
-        if qf is not None and len(qf.columns) > 0:
-            last_quarter_name = str(qf.columns[0].date())
-        else:
-            last_quarter_name = "NIL"
-
         # ---------------------------------------------------------------
-        # 3️⃣ RESULT TABLE INITIALIZATION
+        # 3️⃣ RESULT HEADER
         # ---------------------------------------------------------------
         result = [["Date"] + fields]
 
@@ -103,47 +55,44 @@ def get_stock_data_between_dates():
             for field in fields:
                 key = field.lower()
 
-                # ----- DAILY RAW OHLCV -----
+                # ----- DAILY OHLCV (from history) -----
                 if field in df.columns:
                     entry.append(safe_float(row[field]))
                     continue
 
-                # ----- FAST INFO FIELDS (EXCEPT PRICES) -----
-                # block price fields deliberately
-                blocked_price_keys = ["last_price", "dayhigh", "daylow", "previousclose"]
-                if key not in blocked_price_keys:
-                    # Match case-insensitive keys
+                # ----- FAST INFO (but NEVER prices) -----
+                blocked_prices = ["last_price", "previousclose", "daylow", "dayhigh"]
+                if key not in blocked_prices:
                     for k in fast_info.keys():
                         if k.lower() == key:
                             entry.append(safe_float(fast_info.get(k)))
                             break
                     else:
-                        # continue checking other sources
                         pass
 
-                # ----- INFO DICT FIELDS -----
+                # ----- INFO DICTIONARY (includes growth %) -----
                 if key in map(str.lower, info.keys()):
-                    matched = [k for k in info.keys() if k.lower() == key][0]
-                    entry.append(info.get(matched, "NIL"))
+                    actual_key = [k for k in info.keys() if k.lower() == key][0]
+                    entry.append(info.get(actual_key, "NIL"))
                     continue
 
-                # ----- CUSTOM CALCULATED FIELDS -----
+                # ----- CUSTOM SHORTCUTS -----
                 if key in ("52wh", "52weekhigh"):
-                    entry.append(safe_float(fast_info.get("yearHigh", "NIL")))
+                    entry.append(safe_float(fast_info.get("yearHigh", info.get("fiftyTwoWeekHigh", "NIL"))))
                 elif key in ("52wl", "52weeklow"):
-                    entry.append(safe_float(fast_info.get("yearLow", "NIL")))
+                    entry.append(safe_float(fast_info.get("yearLow", info.get("fiftyTwoWeekLow", "NIL"))))
                 elif key in ("mcap", "marketcap"):
                     entry.append(safe_float(fast_info.get("marketCap", info.get("marketCap", "NIL"))))
                 elif key in ("pe", "p/e"):
                     entry.append(safe_float(fast_info.get("trailingPE", info.get("trailingPE", "NIL"))))
-                elif key in ("sector",):
-                    entry.append(info.get("sector", "NIL"))
-                elif key in ("qoq_revenue_yoy", "yoy_quarterly_revenue"):
-                    entry.append(yoy_quarterly_revenue)
-                elif key in ("qoq_profit_yoy", "yoy_quarterly_profit"):
-                    entry.append(yoy_quarterly_profit)
-                elif key in ("last_quarter", "quarter_name"):
-                    entry.append(last_quarter_name)
+                elif key in ("earningsquarterlygrowth", "earn_q_growth"):
+                    entry.append(
+                        safe_float(info.get("earningsQuarterlyGrowth", "NIL"))
+                    )
+                elif key in ("revenuequarterlygrowth", "rev_q_growth"):
+                    entry.append(
+                        safe_float(info.get("revenueQuarterlyGrowth", "NIL"))
+                    )
                 else:
                     entry.append("NIL")
 
