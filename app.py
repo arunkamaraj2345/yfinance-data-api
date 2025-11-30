@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import yfinance as yf
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -9,83 +10,64 @@ def get_stock_data_between_dates():
     start = request.args.get('start')
     end = request.args.get('end')
 
-    # Fields requested by script
-    extra_fields_raw = request.args.get('fields')
-    if extra_fields_raw:
-        fields = [f.strip() for f in extra_fields_raw.split(',')]
+    extra_fields = request.args.get('fields')
+    if extra_fields:
+        fields = [f.strip() for f in extra_fields.split(",")]   # ❗ No capitalize()
     else:
-        fields = ["Close"]   # default behavior
+        fields = ["Close"]
 
     if not symbol or not start or not end:
-        return jsonify({"error": "Missing symbol/start/end"})
+        return jsonify({"error": "Missing parameters: symbol, start, end"})
 
     try:
-        # Fetch OHLCV (auto_adjust=False for split-corrected only)
         ticker = yf.Ticker(symbol)
-        df = ticker.history(start=start, end=end, auto_adjust=False)
+        df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
 
         if df.empty:
-            return jsonify({"error": f"No data found for {symbol}."})
+            return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
 
-        df = df.reset_index()
+        # Preload info + fast_info ONCE
+        info = ticker.info
+        fast_info = ticker.fast_info
 
-        # Fast info and slow info
-        fast_info = {}
-        try:
-            fast_info = ticker.fast_info.__dict__ if hasattr(ticker, "fast_info") else ticker.fast_info
-        except:
-            fast_info = {}
+        # convert date to string
+        if "Date" in df.columns:
+            df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
-        info = {}
-        try:
-            info = ticker.info
-        except:
-            info = {}
-
-        # ------------------------------------
-        # BUILD HEADER ROW
-        # ------------------------------------
-
-        header = ["Date"] + fields
-        result = [header]
-
-        # ------------------------------------
-        # BUILD DATA ROWS
-        # ------------------------------------
+        result = [["Date"] + fields]
 
         for _, row in df.iterrows():
-            entry = [row["Date"].strftime("%Y-%m-%d")]
+            entry = [row["Date"]]
 
             for field in fields:
-                key = field.lower()
 
-                # 1 — FIRST: price fields from df
-                if key in ["open", "high", "low", "close", "volume"]:
-                    if field.capitalize() in df.columns:
-                        entry.append(float(row[field.capitalize()]))
-                    else:
-                        entry.append(None)
+                # 1️⃣ df (OHLCV price data)
+                if field in df.columns:
+                    entry.append(float(row[field]))
                     continue
 
-                # 2 — SECOND: fast_info values
-                if key in fast_info:
-                    val = fast_info[key]
-                    if isinstance(val, (int, float)):
-                        entry.append(val)
-                    else:
-                        entry.append(None)
+                # 2️⃣ special 52-week compatibility
+                if field.lower() == "52weekhigh":
+                    entry.append(float(fast_info.get("yearHigh")) if fast_info.get("yearHigh") else None)
                     continue
 
-                # 3 — THIRD: info dict values
-                if key in info:
-                    val = info[key]
-                    if isinstance(val, (int, float)):
-                        entry.append(val)
-                    else:
-                        entry.append(None)
+                if field.lower() == "52weeklow":
+                    entry.append(float(fast_info.get("yearLow")) if fast_info.get("yearLow") else None)
                     continue
 
-                # 4 — fallback
+                # 3️⃣ direct .info fields (marketCap, trailingPE, growth data)
+                if field in info:
+                    val = info[field]
+                    entry.append(float(val) if isinstance(val, (float, int)) else None)
+                    continue
+
+                # 4️⃣ direct fast_info fields (only if explicitly named)
+                if field in fast_info:
+                    val = fast_info[field]
+                    entry.append(float(val) if isinstance(val, (float, int)) else None)
+                    continue
+
+                # 5️⃣ unknown field
                 entry.append(None)
 
             result.append(entry)
@@ -93,7 +75,7 @@ def get_stock_data_between_dates():
         return jsonify(result)
 
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"error": str(e)}})
 
 
 if __name__ == "__main__":
