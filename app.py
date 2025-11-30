@@ -1,18 +1,18 @@
 from flask import Flask, request, jsonify
 import yfinance as yf
-from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
 @app.route('/get_stock_data_between_dates', methods=['GET'])
 def get_stock_data_between_dates():
-    symbol = request.args.get('symbol')
-    start = request.args.get('start')
-    end = request.args.get('end')
 
-    extra_fields = request.args.get('fields')
+    symbol = request.args.get("symbol")
+    start = request.args.get("start")
+    end = request.args.get("end")
+
+    extra_fields = request.args.get("fields")
     if extra_fields:
-        fields = [f.strip() for f in extra_fields.split(",")]   # ❗ No capitalize()
+        fields = [f.strip() for f in extra_fields.split(",")]
     else:
         fields = ["Close"]
 
@@ -21,62 +21,69 @@ def get_stock_data_between_dates():
 
     try:
         ticker = yf.Ticker(symbol)
-        df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
 
+        df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
         if df.empty:
             return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
 
-        # Preload info + fast_info ONCE
-        info = ticker.info
-        fast_info = ticker.fast_info
-
-        # convert date to string
+        # Ensure Date column formatted correctly
         if "Date" in df.columns:
             df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
+        # Prepare output header
         result = [["Date"] + fields]
 
+        # Fetch info & fast_info ONCE
+        info = ticker.info or {}
+        fast = ticker.fast_info or {}
+
+        # Build rows
         for _, row in df.iterrows():
             entry = [row["Date"]]
 
             for field in fields:
+                f = field.lower()
 
-                # 1️⃣ df (OHLCV price data)
+                # --- OHLCV from dataframe ---
                 if field in df.columns:
                     entry.append(float(row[field]))
                     continue
 
-                # 2️⃣ special 52-week compatibility
-                if field.lower() == "52weekhigh":
-                    entry.append(float(fast_info.get("yearHigh")) if fast_info.get("yearHigh") else None)
+                # --- 52w high/low ---
+                if f == "52weekhigh":
+                    entry.append(float(fast.get("yearHigh", "NIL")))
                     continue
 
-                if field.lower() == "52weeklow":
-                    entry.append(float(fast_info.get("yearLow")) if fast_info.get("yearLow") else None)
+                if f == "52weeklow":
+                    entry.append(float(fast.get("yearLow", "NIL")))
                     continue
 
-                # 3️⃣ direct .info fields (marketCap, trailingPE, growth data)
-                if field in info:
-                    val = info[field]
-                    entry.append(float(val) if isinstance(val, (float, int)) else None)
+                # --- info-based fields ---
+                if f == "marketcap":
+                    entry.append(info.get("marketCap", "NIL"))
                     continue
 
-                # 4️⃣ direct fast_info fields (only if explicitly named)
-                if field in fast_info:
-                    val = fast_info[field]
-                    entry.append(float(val) if isinstance(val, (float, int)) else None)
+                if f in ("trailingpe", "p/e", "pe"):
+                    entry.append(info.get("trailingPE", "NIL"))
                     continue
 
-                # 5️⃣ unknown field
-                entry.append(None)
+                if f == "earningsquarterlygrowth":
+                    entry.append(info.get("earningsQuarterlyGrowth", "NIL"))
+                    continue
+
+                if f == "revenuequarterlygrowth":
+                    entry.append(info.get("revenueQuarterlyGrowth", "NIL"))
+                    continue
+
+                # Unknown field fallback
+                entry.append("NIL")
 
             result.append(entry)
 
         return jsonify(result)
 
     except Exception as e:
-        return jsonify({"error": str(e)}})
-
+        return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host="0.0.0.0", port=8080)
