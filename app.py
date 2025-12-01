@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import yfinance as yf
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -11,7 +12,7 @@ def get_stock_data_between_dates():
 
     extra_fields = request.args.get('fields')
     if extra_fields:
-        fields = [f.strip() for f in extra_fields.split(",")]
+        fields = [f.strip().capitalize() for f in extra_fields.split(",")]
     else:
         fields = ["Close"]
 
@@ -20,15 +21,12 @@ def get_stock_data_between_dates():
 
     try:
         ticker = yf.Ticker(symbol)
-
-        # ⭐ FIX #2: Fetch once outside loop (reduces rate limits)
-        fast_info = ticker.fast_info           # lightweight
-        info = ticker.info                     # heavy—only called once
-
         df = ticker.history(start=start, end=end, auto_adjust=False).reset_index()
+
         if df.empty:
             return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
 
+        # Ensure Date column always formatted
         if "Date" in df.columns:
             df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
@@ -36,49 +34,26 @@ def get_stock_data_between_dates():
 
         for _, row in df.iterrows():
             entry = [row["Date"]]
-
             for field in fields:
-
-                # 1) OHLCV direct fields
                 if field in df.columns:
                     entry.append(float(row[field]))
-                    continue
-
-                # 2) OLD FIELDS — case-insensitive
-                if field.lower() == "52weekhigh":
-                    entry.append(float(fast_info.get("yearHigh", "NIL")))
-                    continue
-
-                if field.lower() == "52weeklow":
-                    entry.append(float(fast_info.get("yearLow", "NIL")))
-                    continue
-
-                # 3) NEW FIELDS — EXACT case-sensitive
-                if field == "marketCap":
-                    entry.append(fast_info.get("market_cap", "NIL"))
-                    continue
-
-                if field == "trailingPE":
-                    entry.append(info.get("trailingPE", "NIL"))
-                    continue
-
-                if field == "earningsQuarterlyGrowth":
-                    entry.append(info.get("earningsQuarterlyGrowth", "NIL"))
-                    continue
-
-                if field == "revenueQuarterlyGrowth":
-                    entry.append(info.get("revenueQuarterlyGrowth", "NIL"))
-                    continue
-
-                # 4) Unknown
-                entry.append("NIL")
-
+                elif field.lower() == "52weekhigh":
+                    entry.append(float(ticker.fast_info.get("yearHigh", "NIL")))
+                elif field.lower() == "52weeklow":
+                    entry.append(float(ticker.fast_info.get("yearLow", "NIL")))
+                elif field == "marketCap":  # Case sensitive
+                    value = ticker.fast_info.get("marketCap", "NIL")
+                    # Add as float only if available
+                    entry.append(float(value) if value != "NIL" else "NIL")
+                else:
+                    entry.append("NIL")
             result.append(entry)
 
         return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": str(e)})
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
