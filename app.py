@@ -12,7 +12,9 @@ def get_stock_data_between_dates():
 
     extra_fields = request.args.get('fields')
     if extra_fields:
-        fields = [f.strip().capitalize() for f in extra_fields.split(",")]
+        # ❌ Was f.strip().capitalize() — destroyed camelCase like marketCap
+        # ✅ Keep the field EXACTLY as user passes it
+        fields = [f.strip() for f in extra_fields.split(",")]
     else:
         fields = ["Close"]
 
@@ -26,27 +28,42 @@ def get_stock_data_between_dates():
         if df.empty:
             return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
 
-        # Ensure Date column always formatted
+        # Ensure Date column always in YYYY-MM-DD format
         if "Date" in df.columns:
             df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
+
+        fast_info = ticker.fast_info
 
         result = [["Date"] + fields]
 
         for _, row in df.iterrows():
-            entry = [row["Date"]]
+            entry = [row["Date"]]  # already a string in YYYY-MM-DD
+
             for field in fields:
+
+                # 1️⃣ Direct match from DF columns (Close, Open, High, etc.)
                 if field in df.columns:
                     entry.append(float(row[field]))
-                elif field.lower() == "52weekhigh":
-                    entry.append(float(ticker.fast_info.get("yearHigh", "NIL")))
-                elif field.lower() == "52weeklow":
-                    entry.append(float(ticker.fast_info.get("yearLow", "NIL")))
-                elif field == "marketCap":  # Case sensitive
-                    value = ticker.fast_info.get("marketCap", "NIL")
-                    # Add as float only if available
-                    entry.append(float(value) if value != "NIL" else "NIL")
-                else:
-                    entry.append("NIL")
+                    continue
+
+                # 2️⃣ 52-week high
+                if field.lower() == "52weekhigh":
+                    entry.append(float(fast_info.get("yearHigh", "NIL")))
+                    continue
+
+                # 3️⃣ 52-week low
+                if field.lower() == "52weeklow":
+                    entry.append(float(fast_info.get("yearLow", "NIL")))
+                    continue
+
+                # 4️⃣ Market Cap (case-sensitive "marketCap")
+                if field == "marketCap":
+                    entry.append(float(fast_info.get("marketCap", "NIL")))
+                    continue
+
+                # 5️⃣ Anything unknown → NIL
+                entry.append("NIL")
+
             result.append(entry)
 
         return jsonify(result)
