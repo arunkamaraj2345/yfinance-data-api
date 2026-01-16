@@ -4,6 +4,17 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
+# ============================
+# SERVER STATUS ENDPOINT
+# ============================
+@app.route('/status', methods=['GET'])
+def status():
+    return jsonify({
+        "status": "server on",
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+
 @app.route('/get_stock_data_between_dates', methods=['GET'])
 def get_stock_data_between_dates():
     symbol = request.args.get('symbol')
@@ -12,8 +23,6 @@ def get_stock_data_between_dates():
 
     extra_fields = request.args.get('fields')
     if extra_fields:
-        # ❌ Was f.strip().capitalize() — destroyed camelCase like marketCap
-        # ✅ Keep the field EXACTLY as user passes it
         fields = [f.strip() for f in extra_fields.split(",")]
     else:
         fields = ["Close"]
@@ -28,7 +37,6 @@ def get_stock_data_between_dates():
         if df.empty:
             return jsonify({"error": f"No data found for {symbol} between {start} and {end}."})
 
-        # Ensure Date column always in YYYY-MM-DD format
         if "Date" in df.columns:
             df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
@@ -37,31 +45,26 @@ def get_stock_data_between_dates():
         result = [["Date"] + fields]
 
         for _, row in df.iterrows():
-            entry = [row["Date"]]  # already a string in YYYY-MM-DD
+            entry = [row["Date"]]
 
             for field in fields:
 
-                # 1️⃣ Direct match from DF columns (Close, Open, High, etc.)
                 if field in df.columns:
                     entry.append(float(row[field]))
                     continue
 
-                # 2️⃣ 52-week high
                 if field.lower() == "52weekhigh":
                     entry.append(float(fast_info.get("yearHigh", "NIL")))
                     continue
 
-                # 3️⃣ 52-week low
                 if field.lower() == "52weeklow":
                     entry.append(float(fast_info.get("yearLow", "NIL")))
                     continue
 
-                # 4️⃣ Market Cap (case-sensitive "marketCap")
                 if field == "marketCap":
                     entry.append(float(fast_info.get("marketCap", "NIL")))
                     continue
 
-                # 5️⃣ Anything unknown → NIL
                 entry.append("NIL")
 
             result.append(entry)
