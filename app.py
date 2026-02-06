@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import yfinance as yf
+import time
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -9,10 +10,34 @@ app = Flask(__name__)
 # ============================
 @app.route('/status', methods=['GET'])
 def status():
-    return jsonify({
-        "status": "server on",
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
+    try:
+        print("=== SERVER WARMUP START ===")
+
+        ticker = yf.Ticker("RELIANCE.NS")
+
+        # Warm price endpoint
+        ticker.history(period="5d")
+
+        # Warm fast_info endpoint (used in your API)
+        _ = ticker.fast_info
+
+        # Stabilize connection pool
+        time.sleep(2)
+
+        print("=== SERVER WARMUP COMPLETE ===")
+
+        return jsonify({
+            "status" : "server on",
+            "warmup status": "server warm",
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status" : "server on",
+            "warmup status": "warmup failed",
+            "error": str(e)
+        }), 500
 
 
 @app.route('/get_stock_data_between_dates', methods=['GET'])
@@ -77,3 +102,4 @@ def get_stock_data_between_dates():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
+
