@@ -20,6 +20,7 @@ def status():
 
         # Warm fast_info endpoint (used in your API)
         _ = ticker.fast_info
+        _ = ticker.info
 
         # Stabilize connection pool
         time.sleep(2)
@@ -102,4 +103,5 @@ def get_stock_data_between_dates():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
+
 
