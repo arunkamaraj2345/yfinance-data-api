@@ -18,8 +18,15 @@ def status():
         # Warm price endpoint
         ticker.history(period="5d")
 
+        # micro sleep (human-like)
+        time.sleep(0.2 + random.random() * 0.3)
+
         # Warm fast_info endpoint (used in your API)
         _ = ticker.fast_info
+
+        # micro sleep (human-like)
+        time.sleep(0.2 + random.random() * 0.3)
+        
         _ = ticker.info
 
         # Stabilize connection pool
@@ -103,5 +110,6 @@ def get_stock_data_between_dates():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
+
 
 
