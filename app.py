@@ -42,6 +42,37 @@ def status():
             "error": str(e)
         }), 500
 
+# ============================
+# INDIAN MARKET CAP FORMATTER
+# ============================
+def format_indian_crore(value):
+    try:
+        if value is None:
+            return "NIL"
+
+        # convert rupees → crores
+        crore = float(value) / 10000000
+
+        # format with 2 decimals
+        s = f"{crore:.2f}"
+        int_part, dec_part = s.split(".")
+
+        # Indian comma placement
+        last3 = int_part[-3:]
+        other = int_part[:-3]
+
+        if other:
+            import re
+            other = re.sub(r'(\d)(?=(\d{2})+(?!\d))', r'\1,', other)
+            formatted = other + "," + last3
+        else:
+            formatted = last3
+
+        return f"{formatted}.{dec_part} Cr"
+
+    except:
+        return "NIL"
+
 
 @app.route('/get_stock_data_between_dates', methods=['GET'])
 def get_stock_data_between_dates():
@@ -90,7 +121,8 @@ def get_stock_data_between_dates():
                     continue
 
                 if field == "marketCap":
-                    entry.append(float(fast_info.get("marketCap", "NIL")))
+                    raw_mc = fast_info.get("marketCap", None)
+                    entry.append(format_indian_crore(raw_mc))
                     continue
 
                 entry.append("NIL")
@@ -105,6 +137,7 @@ def get_stock_data_between_dates():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
+
 
 
 
