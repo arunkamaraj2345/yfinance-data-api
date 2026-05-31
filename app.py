@@ -306,15 +306,24 @@ def get_stock_data_between_dates():
                         continue
 
                     if field.lower() == "52weekhigh":
-                        entry.append(float(fast_info.get("yearHigh", "NIL")))
+                        try:
+                            entry.append(float(fast_info.get("yearHigh", "NIL")))
+                        except (ValueError, TypeError):
+                            entry.append("NIL")    
                         continue
 
                     if field.lower() == "52weeklow":
-                        entry.append(float(fast_info.get("yearLow", "NIL")))
+                        try:
+                            entry.append(float(fast_info.get("yearLow", "NIL")))
+                        except (ValueError, TypeError):
+                            entry.append("NIL")
                         continue
 
                     if field == "marketCap":
-                        entry.append(float(fast_info.get("marketCap", "NIL")))
+                        try:
+                            entry.append(float(fast_info.get("marketCap", "NIL")))
+                        except (ValueError, TypeError):
+                            entry.append("NIL")
                         continue
 
                     entry.append("NIL")
