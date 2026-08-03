@@ -370,6 +370,19 @@ def get_stock_data_between_dates():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+@app.route("/versions")
+def versions():
+    import sys
+    import flask
+    import pandas
+    import yfinance
+
+    return {
+        "python": sys.version,
+        "flask": flask.__version__,
+        "pandas": pandas.__version__,
+        "yfinance": yfinance.__version__
+    }
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
