@@ -384,5 +384,17 @@ def versions():
         "yfinance": yfinance.__version__
     }
 
+@app.route("/raw")
+def raw():
+    import yfinance as yf
+
+    df = yf.Ticker("TRENT.NS").history(
+        start="2026-07-25",
+        end="2026-08-02",
+        auto_adjust=False
+    )
+
+    return df.reset_index().to_json()
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
