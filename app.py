@@ -403,6 +403,24 @@ def raw2():
         "dates": [d.strftime("%Y-%m-%d") for d in df.index]
     }
 
+@app.route("/csv")
+def csv():
+
+    import requests
+
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        "TRENT.NS"
+        "?period1=1753401600"
+        "&period2=1754524800"
+        "&interval=1d"
+        "&includeAdjustedClose=true"
+    )
+
+    r = requests.get(url, timeout=30)
+
+    return r.text
+
 @app.route("/raw")
 def raw():
     import yfinance as yf
