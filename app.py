@@ -384,6 +384,22 @@ def versions():
         "yfinance": yfinance.__version__
     }
 
+@app.route("/raw2")
+def raw2():
+    import yfinance as yf
+
+    df = yf.download(
+        "TRENT.NS",
+        start="2026-07-25",
+        end="2026-08-02",
+        auto_adjust=False,
+        progress=False
+    )
+
+    return {
+        "dates": [d.strftime("%Y-%m-%d") for d in df.index]
+    }
+
 @app.route("/raw")
 def raw():
     import yfinance as yf
