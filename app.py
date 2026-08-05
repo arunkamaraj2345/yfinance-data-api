@@ -406,20 +406,19 @@ def raw2():
 @app.route("/csv")
 def csv():
 
-    import requests
+    import yfinance as yf
 
-    url = (
-        "https://query1.finance.yahoo.com/v8/finance/chart/"
-        "TRENT.NS"
-        "?period1=1753401600"
-        "&period2=1754524800"
-        "&interval=1d"
-        "&includeAdjustedClose=true"
+    df = yf.download(
+        "SBIN.NS TRENT.NS",
+        start="2026-07-25",
+        end="2026-08-06",
+        group_by="ticker",
+        progress=False,
+        threads=False,
+        auto_adjust=False,
     )
 
-    r = requests.get(url, timeout=30)
-
-    return r.text
+    print(df)
 
 @app.route("/raw")
 def raw():
