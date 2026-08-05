@@ -29,7 +29,7 @@ os.makedirs(MERGE_DIR, exist_ok=True)
 # Returns dict: { date -> filepath }
 # --------------------------------------------------
 
-MERGE_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.csv$")
+MERGE_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:\([^)]*\))?\.csv$")
 
 # Fields that can be sourced from the merge file.
 # Key   = field name as the caller requests it (yfinance casing)
@@ -384,53 +384,6 @@ def versions():
         "yfinance": yfinance.__version__
     }
 
-@app.route("/raw2")
-def raw2():
-    import yfinance as yf
-
-    yf.set_config(proxy=None)
-
-    df = yf.download(
-        "TRENT.NS",
-        start="2026-07-25",
-        end="2026-08-06",
-        auto_adjust=False,
-        progress=False,
-        threads=False
-    )
-
-    return {
-        "dates": [d.strftime("%Y-%m-%d") for d in df.index]
-    }
-
-@app.route("/csv")
-def csv():
-
-    import yfinance as yf
-
-    df = yf.download(
-        "SBIN.NS TRENT.NS",
-        start="2026-07-25",
-        end="2026-08-06",
-        group_by="ticker",
-        progress=False,
-        threads=False,
-        auto_adjust=False,
-    )
-
-    print(df)
-
-@app.route("/raw")
-def raw():
-    import yfinance as yf
-
-    df = yf.Ticker("TRENT.NS").history(
-        start="2026-07-25",
-        end="2026-08-06",
-        auto_adjust=False
-    )
-
-    return df.reset_index().to_json()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)
