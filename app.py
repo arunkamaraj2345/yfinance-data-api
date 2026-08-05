@@ -388,12 +388,15 @@ def versions():
 def raw2():
     import yfinance as yf
 
+    yf.set_config(proxy=None)
+
     df = yf.download(
         "TRENT.NS",
         start="2026-07-25",
         end="2026-08-06",
         auto_adjust=False,
-        progress=False
+        progress=False,
+        threads=False
     )
 
     return {
