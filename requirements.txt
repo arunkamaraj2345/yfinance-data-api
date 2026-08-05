@@ -1,3 +1,3 @@
 flask
 pandas
-yfinance==1.5.2
+yfinance
