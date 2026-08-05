@@ -391,7 +391,7 @@ def raw2():
     df = yf.download(
         "TRENT.NS",
         start="2026-07-25",
-        end="2026-08-02",
+        end="2026-08-06",
         auto_adjust=False,
         progress=False
     )
@@ -406,7 +406,7 @@ def raw():
 
     df = yf.Ticker("TRENT.NS").history(
         start="2026-07-25",
-        end="2026-08-02",
+        end="2026-08-06",
         auto_adjust=False
     )
 
