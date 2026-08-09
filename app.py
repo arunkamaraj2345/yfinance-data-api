@@ -83,78 +83,112 @@ def normalize_symbol(symbol):
     return symbol + ".NS"
 
 
-def get_merge_rows(symbol, merge_files, existing_dates, fields, fast_info):
+def get_merge_rows(symbol, merge_files, df, fields, fast_info):
     """
-    For a given symbol, checks each qualifying merge file and builds
-    additional rows for dates missing from the yfinance data.
+    For a given symbol, checks each qualifying merge file and builds/replaces
+    OHLCV rows.
 
-    Parameters:
-        symbol         : Normalised stock symbol (uppercase, with .NS/.BO)
-        merge_files    : dict { date -> filepath } from scan_merge_files()
-        existing_dates : set of date objects already in yfinance df
-        fields         : list of field names the caller requested
-        fast_info      : yfinance fast_info object (already fetched, reused)
+    Rules:
+      1. If Yahoo has no row for the merge-file date, add the merge row.
+      2. If Yahoo has the date but ANY of Open/Close/High/Low/Volume is
+         NaN or NIL, replace ALL five OHLCV values with the merge values.
+      3. If Yahoo has the date and all five OHLCV values are valid, leave
+         Yahoo's OHLCV values unchanged.
+      4. 52weekhigh/52weeklow/marketCap continue to come from fast_info.
 
     Returns:
-        List of [date_str, val1, val2, ...] rows — one per missing date.
+        List of [date_str, val1, val2, ...] rows for dates that need to be
+        added or whose OHLCV values need to be replaced.
     """
-    extra_rows = []
+    replacement_rows = []
+
+    # Build a quick lookup of Yahoo rows by date.
+    yahoo_rows = {}
+    if not df.empty and "Date" in df.columns:
+        for _, row in df.iterrows():
+            yahoo_rows[row["Date"]] = row
+
+    ohlcv_fields = ["Open", "High", "Low", "Close", "Volume"]
+
+    def is_invalid(value):
+        if value is None:
+            return True
+
+        if isinstance(value, str):
+            stripped = value.strip().upper()
+            if stripped in ("NIL", "NAN", ""):
+                return True
+
+        try:
+            return pd.isna(value)
+        except (TypeError, ValueError):
+            return False
 
     for file_date, filepath in sorted(merge_files.items()):
+        date_str = file_date.strftime("%Y-%m-%d")
+        yahoo_row = yahoo_rows.get(date_str)
 
-        # Skip if yfinance already has this date — no duplicate insertion
-        if file_date in existing_dates:
-            continue
+        # If Yahoo already has the date, only use the merge file when
+        # at least one OHLCV field is NaN/NIL.
+        if yahoo_row is not None:
+            yahoo_ohlcv_invalid = any(
+                field in df.columns and is_invalid(yahoo_row[field])
+                for field in ohlcv_fields
+            )
 
-        # Read the merge file
+            if not yahoo_ohlcv_invalid:
+                continue
+
+        # Read the merge file.
         try:
             mdf = pd.read_csv(filepath)
         except Exception as e:
             print(f"  [MERGE WARNING] Could not read {filepath}: {e}")
             continue
 
-        # Normalise column names to lowercase
+        # Normalise column names to lowercase.
         mdf.columns = [c.strip().lower() for c in mdf.columns]
 
-        # Must have a symbol column to match against
+        # Must have a symbol column to match against.
         if "symbol" not in mdf.columns:
             print(f"  [MERGE WARNING] No 'symbol' column in {filepath}. Skipping.")
             continue
 
-        # Normalise symbols in the merge file for matching
+        # Normalise symbols in the merge file for matching.
         mdf["symbol"] = mdf["symbol"].apply(normalize_symbol)
 
-        # Find the row for this symbol
+        # Find the row for this symbol.
         symbol_rows = mdf[mdf["symbol"] == symbol]
 
         if symbol_rows.empty:
-            # Symbol not in this merge file — skip silently
             continue
 
-        # Take the first matching row
+        # Take the first matching row.
         merge_row = symbol_rows.iloc[0]
 
-        # Build the response entry for this date
-        date_str = file_date.strftime("%Y-%m-%d")
-        entry    = [date_str]
+        # Build the response entry for this date.
+        entry = [date_str]
 
         for field in fields:
 
-            # --- Source from merge file columns ---
+            # OHLCV fields come from the merge file.
             if field in MERGE_FIELD_MAP:
-                col = MERGE_FIELD_MAP[field]    # e.g. "Close" -> "close"
+                col = MERGE_FIELD_MAP[field]
+
                 if col in mdf.columns:
                     val = merge_row[col]
                     try:
-                        entry.append(float(val))
+                        if is_invalid(val):
+                            entry.append("NIL")
+                        else:
+                            entry.append(float(val))
                     except (ValueError, TypeError):
                         entry.append("NIL")
                 else:
-                    # Merge file doesn't have this column
                     entry.append("NIL")
                 continue
 
-            # --- Source from fast_info (same object already fetched) ---
+            # 52-week high comes from fast_info.
             if field.lower() == "52weekhigh":
                 try:
                     entry.append(float(fast_info.get("yearHigh", "NIL")))
@@ -162,6 +196,7 @@ def get_merge_rows(symbol, merge_files, existing_dates, fields, fast_info):
                     entry.append("NIL")
                 continue
 
+            # 52-week low comes from fast_info.
             if field.lower() == "52weeklow":
                 try:
                     entry.append(float(fast_info.get("yearLow", "NIL")))
@@ -169,6 +204,7 @@ def get_merge_rows(symbol, merge_files, existing_dates, fields, fast_info):
                     entry.append("NIL")
                 continue
 
+            # Market cap comes from fast_info.
             if field == "marketCap":
                 try:
                     entry.append(float(fast_info.get("marketCap", "NIL")))
@@ -176,12 +212,12 @@ def get_merge_rows(symbol, merge_files, existing_dates, fields, fast_info):
                     entry.append("NIL")
                 continue
 
-            # --- Unknown field ---
+            # Unknown field.
             entry.append("NIL")
 
-        extra_rows.append(entry)
+        replacement_rows.append(entry)
 
-    return extra_rows
+    return replacement_rows
 
 
 # ============================
@@ -346,15 +382,34 @@ def get_stock_data_between_dates():
             merged_rows = get_merge_rows(
                 norm_symbol,
                 merge_files,
-                existing_dates,
+                df,
                 fields,
                 fast_info
             )
 
             if merged_rows:
-                # Detach header, combine data rows, re-sort by date, reattach header
-                all_data_rows = result[1:] + merged_rows
-                all_data_rows.sort(key=lambda r: r[0])  # date strings sort correctly as YYYY-MM-DD
+                # Build a lookup of merge rows by date.
+                merge_row_map = {row[0]: row for row in merged_rows}
+
+                # Replace Yahoo rows for dates whose OHLCV data was invalid,
+                # and append rows for dates Yahoo did not have.
+                all_data_rows = []
+
+                for row in result[1:]:
+                    if row[0] in merge_row_map:
+                        all_data_rows.append(merge_row_map[row[0]])
+                    else:
+                        all_data_rows.append(row)
+
+                yahoo_dates = {row[0] for row in result[1:]}
+
+                for row in merged_rows:
+                    if row[0] not in yahoo_dates:
+                        all_data_rows.append(row)
+
+                all_data_rows.sort(
+                    key=lambda r: r[0]
+                )  # YYYY-MM-DD strings sort chronologically
                 result = [result[0]] + all_data_rows
 
         # --------------------------------------------------
